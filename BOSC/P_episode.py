@@ -12,11 +12,15 @@ import scipy.stats as scp
 import os
 
 class P_episode(object):
-    '''An object for handling the better oscollation detection methods
-    
-    params:
-        events - a pandas DataFrame containing the event or events (from the same session) being analized
+    '''An object for handling the Better Oscillation Detection Methods
+    **Currently only handles encoding events**
+
+    Parameters:
+        events - a pandas DataFrame containing the event or events (from the same session) being analyzed
         eeg - a ptsa timeseries object containing EEG data
+
+        rel_start = beginning of event in ms relative to word onset
+        rel_stop = end of event in ms relative to word onset
 
         width - the length of the MorletWaveletFilter
         sr - the sample rate for the EEG signal. If none, it uses CMLReader to find it 
@@ -24,26 +28,31 @@ class P_episode(object):
         highfreq - the highest frequency to be calculated
         numfreqs - the number of frequencies logspaced between lowfreq and highfreq to be calculated
         
-        percentthresh - how rare the occurance must be to be considered significant
-        numcyclesthresh - how many cycles the percentthresh must last to be considered significant
+        percentthresh - Percentile (default 95th) of chi-squared distribution of powers. Describes how much power is deemed a 
+        				significant oscillation. 
+        numcyclesthresh - how many cycles the power threshold must last to be considered significant. 3 by deault
         
-    attributes: 
+    Attributes: 
         detected - a 3d list/array containing which frequencies have significant osccilations at which times 
             (lists, frequencies, times)
         pepisode -  a 2d array containing the pepisode for each frequency (significant osccilations over time) 
-            (event, frequencies)
+            (events, frequencies)
         freqs - an array of the frequencies calculated
         meanpower - a 2d array containing the mean power at each frequency
             (event, frequencies)
         fit - contains the slope and y-intercept of the regression line
-        tfm - a 3d array containing the origional time frequency matrix for each event
-            (event, frequencies, times)
-        sr - int, the sample rate for the EEG signal
+        tfm - a 3d array containing the origional time frequency matrix for each list
+            (lists, frequencies, times)
+        lists - lists for which BOSC was computed
+    Methods:
+    	background_fit - plots power spectrum with background fit
+    	raw_trace - visualization of EEG trace with true oscillations highlighted
+
     
     '''
     
-    def __init__(self, events, eeg, duration=1000, width=5, sr=None, lowfreq=2, highfreq=120, 
-                 numfreqs=30, percentthresh=.95, numcyclesthresh=3, relstart = 300, relstop = 1301):
+    def __init__(self, events, eeg, relstart = 300, relstop = 1301, width=5, sr=None, lowfreq=2, highfreq=120, 
+                 numfreqs=30, percentthresh=.95, numcyclesthresh=3):
         
         
         self.events = events
@@ -61,7 +70,7 @@ class P_episode(object):
         
         #step one get the time freqency matrix for the events
         self.eeg = eeg
-        self.BOSC_tf()
+        self.__BOSC_tf()
         
         self.detected = [[[] for i in range(len(self.freqs))] for j in range(len(self.lists))] # will be list, freqs, time
         self.Pepisode = np.zeros((len(self.word_events), len(self.freqs))) # will be events, freqs
@@ -76,10 +85,10 @@ class P_episode(object):
         for i, lst in enumerate(self.tfm):
             #STEP TWO: estimate the background spectrum for a power frequency plot with a linear regression 
             #in log space. This should use a shoulder(buffer) based on the lowest frequency (longest period)
-            self.BOSC_bgfit(i, lst)
+            self.__BOSC_bgfit(i, lst)
             
             #STEP THREE: Calculate the threshold values to use for detection
-            self.BOSC_threshholds(self.meanpower[i])
+            self.__BOSC_threshholds(self.meanpower[i])
             # *** Hint: At this stage, it is a good idea to cross-check the background power spectrum fit 
             #(see PLOT #1: Power spectrum and background spectrum fit)
             for num, freq in enumerate(self.freqs):
@@ -94,7 +103,7 @@ class P_episode(object):
                                    self.list_times[lst_idx] < (event.eegoffset*(1000/self.sr) + relstop))
             mat = mat[:, bools]
             for num, freq in enumerate(self.freqs):
-                self.detected[lst_idx][num][bools] = self.BOSC_detect(
+                self.detected[lst_idx][num][bools] = self.__BOSC_detect(
                     mat[num], 
                     self.powerthresh[lst_idx][num], 
                     self.durthresh[lst_idx][num])
@@ -108,7 +117,7 @@ class P_episode(object):
         self.durthresh = np.array(self.durthresh)
     
     
-    def BOSC_tf(self):
+    def __BOSC_tf(self):
         '''
         Gets the time frequency matrix for events
 
@@ -159,13 +168,13 @@ class P_episode(object):
         self.word_events = self.word_events[np.isin(self.word_events.list, self.lists)]
         
  
-    def BOSC_bgfit(self, idx, tfm):
+    def __BOSC_bgfit(self, idx, tfm):
         '''
         This function estimates the background power spectrum via a linear regression fit to the power
         spectrum in log-log coordinates
 
         parameters: 
-            idx - index of regression fit
+            idx - index of regression fit (aka which list is being fit)
             tfm - the time-frequency matrix for the event to be analyzed
         '''
         #linear regression
@@ -173,7 +182,7 @@ class P_episode(object):
         #transform back to natural units (power; usually uV^2/Hz)
         self.meanpower.append(10.**(np.polyval(fit, np.log10(self.freqs))))
         
-    def BOSC_threshholds(self, meanpower):
+    def __BOSC_threshholds(self, meanpower):
         '''
         This function calculates all the power thresholds and duration
         thresholds for use with BOSC_detect to detect oscillatory episodes
@@ -187,7 +196,7 @@ class P_episode(object):
         #duration threshold is simply a certain number of cycles, so it scales with frequency
         self.durthresh.append(self.numcyclesthresh*self.sr/self.freqs)
         
-    def BOSC_detect(self, timecourse, powthresh, durthresh):
+    def __BOSC_detect(self, timecourse, powthresh, durthresh):
         '''
         This function detects oscillations based on a wavelet power
         timecourse, b, a power threshold (powthresh) and duration
@@ -375,7 +384,8 @@ def calc_subj_pep(subj, elecs = None, method = 'avg', freq_specs = (2, 120, 30),
                     bip = reader.load_eeg(scheme = pairs[pairs.label ==pair_str]).to_ptsa().mean(['event', 'channel'])
                     bip = ButterworthFilter(bip, freq_range=[58., 62.], filt_type='stop', order=4).filter()
                     print("Applying BOSC method!")
-                    bip.to_hdf(path + '/session_' + str(sess))
+                    if save:
+                    	bip.to_hdf(path + '/session_' + str(sess))
                     bosc = P_episode(all_events, bip, sr = bip.samplerate.values, 
                                     lowfreq = lowfreq, highfreq=highfreq, numfreqs = numfreqs)
 
@@ -390,7 +400,8 @@ def calc_subj_pep(subj, elecs = None, method = 'avg', freq_specs = (2, 120, 30),
                     avg = (eeg[contacts.label.str.contains(chans[0]) | contacts.label.str.contains(chans[1]), :] \
                            - eeg.mean('channel')).mean('channel')
                     avg = ButterworthFilter(avg, freq_range=[58., 62.], filt_type='stop', order=4).filter()
-                    avg.to_hdf(path + '/session_' + str(sess))
+                    if save:
+                    	avg.to_hdf(path + '/session_' + str(sess))
                     bosc = P_episode(all_events, avg, sr = avg.samplerate.values,
                                     lowfreq = lowfreq, highfreq=highfreq, numfreqs = numfreqs)
                     
