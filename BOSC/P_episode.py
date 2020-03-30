@@ -1,15 +1,16 @@
 import numpy as np
 import pandas as pd
-import cmlreaders as cml
-import matplotlib.pyplot as plt
+import scipy.stats as scp
+import os
 import math
+import matplotlib.pyplot as plt
+import cmlreaders as cml
 from ptsa.data.filters import ButterworthFilter
 from ptsa.data.filters import MorletWaveletFilter
 from ptsa.data.timeseries import TimeSeries
 from scipy.stats.distributions import chi2
 from sklearn.metrics import r2_score
-import scipy.stats as scp
-import os
+
 
 class P_episode(object):
     '''An object for handling the Better Oscillation Detection Methods
