@@ -52,9 +52,8 @@ class P_episode(object):
     
     '''
     
-    def __init__(self, events, eeg, relstart = 300, relstop = 1301, width=5, sr=None, lowfreq=2, highfreq=120, 
-                 numfreqs=30, percentthresh=.95, numcyclesthresh=3):
-        
+    def __init__(self, events, eeg, relstart = 300, relstop = 1301, width=5, sr=None, lowfreq=2, highfreq=120, numfreqs=30, 
+    			percentthresh=.95, numcyclesthresh=3):
         
         self.events = events
         self.word_events = events[events.type == 'WORD']
@@ -69,7 +68,7 @@ class P_episode(object):
         self.relstart = relstart
         self.relstop = relstop
         
-        #step one get the time freqency matrix for the events
+        #Get the time freqency matrix for the events
         self.eeg = eeg
         self.__BOSC_tf()
         
@@ -84,9 +83,9 @@ class P_episode(object):
 
         
         for i, lst in enumerate(self.tfm):
-            #STEP TWO: estimate the background spectrum for a power frequency plot with a linear regression 
-            #in log space. This should use a shoulder(buffer) based on the lowest frequency (longest period)
-            self.__BOSC_bgfit(i, lst)
+            #Estimate the background spectrum for a power frequency plot with a linear regression 
+            #in log space. 
+            self.__BOSC_bgfit(lst)
             
             #STEP THREE: Calculate the threshold values to use for detection
             self.__BOSC_threshholds(self.meanpower[i])
@@ -169,13 +168,12 @@ class P_episode(object):
         self.word_events = self.word_events[np.isin(self.word_events.list, self.lists)]
         
  
-    def __BOSC_bgfit(self, idx, tfm):
+    def __BOSC_bgfit(self, tfm):
         '''
         This function estimates the background power spectrum via a linear regression fit to the power
         spectrum in log-log coordinates
 
         parameters: 
-            idx - index of regression fit (aka which list is being fit)
             tfm - the time-frequency matrix for the event to be analyzed
         '''
         #linear regression
@@ -214,9 +212,6 @@ class P_episode(object):
         detected - a binary vector containing the value 1 for times at
                    which oscillations (at the frequency of interest) were
                    detected and 0 where no oscillations were detected.
-
-        NOTE: Remember to account for edge effects by including
-        "shoulder" data and accounting for it afterwards!
 
         To calculate Pepisode:
         Pepisode=length(find(detected))/(length(detected));
