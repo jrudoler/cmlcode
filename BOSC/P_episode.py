@@ -41,7 +41,6 @@ class P_episode(object):
         freqs - an array of the frequencies calculated
         meanpower - a 2d array containing the mean power at each frequency
             (event, frequencies)
-        fit - contains the slope and y-intercept of the regression line
         tfm - a 3d array containing the origional time frequency matrix for each list
             (lists, frequencies, times)
         lists - lists for which BOSC was computed
@@ -371,7 +370,7 @@ def calc_subj_pep(subj, elecs = None, method = 'avg', freq_specs = (2, 120, 30),
                 if not os.path.exists(path):
                     os.makedirs(path)
                 if load_eeg:
-                    eeg = TimeSeries.from_hdf(path + '/session_' + str(sess))
+                    eeg = TimeSeries.from_hdf(path + '/session_' + str(sess) + '_' + pair_str)
                     bosc = P_episode(all_events, eeg, sr = eeg.samplerate.values,
                                     lowfreq = lowfreq, highfreq=highfreq, numfreqs = numfreqs)
                 elif method == 'bip': 
@@ -381,7 +380,7 @@ def calc_subj_pep(subj, elecs = None, method = 'avg', freq_specs = (2, 120, 30),
                     bip = ButterworthFilter(bip, freq_range=[58., 62.], filt_type='stop', order=4).filter()
                     print("Applying BOSC method!")
                     if save:
-                    	bip.to_hdf(path + '/session_' + str(sess))
+                    	bip.to_hdf(path + '/session_' + str(sess) + '_' + pair_str)
                     bosc = P_episode(all_events, bip, sr = bip.samplerate.values, 
                                     lowfreq = lowfreq, highfreq=highfreq, numfreqs = numfreqs)
 
@@ -397,7 +396,7 @@ def calc_subj_pep(subj, elecs = None, method = 'avg', freq_specs = (2, 120, 30),
                            - eeg.mean('channel')).mean('channel')
                     avg = ButterworthFilter(avg, freq_range=[58., 62.], filt_type='stop', order=4).filter()
                     if save:
-                    	avg.to_hdf(path + '/session_' + str(sess))
+                    	avg.to_hdf(path + '/session_' + str(sess) + '_' + pair_str)
                     bosc = P_episode(all_events, avg, sr = avg.samplerate.values,
                                     lowfreq = lowfreq, highfreq=highfreq, numfreqs = numfreqs)
                     
