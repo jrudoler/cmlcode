@@ -248,34 +248,34 @@ class P_episode(object):
                 detected[episode[0]:episode[1]]=1#from start to end there is an episode
         return detected
 
-    def background_fit(self, plot_type = 'list'):
+    def background_fit(self, plot_type = 'list', list_idx = None):
         lists = self.word_events.list.unique()
         xf = range(1, len(self.freqs)) # to get log-sampled frequency tick marks
         log_power = []
         fit = []
-        # average over lists so that plot is more readable
-        if plot_type == 'session':
-            for list_idx, l in enumerate(lists):
-                log_power.append(np.mean(np.log10(self.tfm[list_idx]),1))
-                fit.append(np.log10(self.meanpower[list_idx]))
-            r2 = r2_score(np.array(log_power).T, np.array(fit).T, multioutput = 'uniform_average')
-            plt.plot(self.freqs, np.mean(log_power, 0), 'ko-', linewidth=2, alpha = 0.5)
-            plt.plot(self.freqs,  np.mean(fit, 0), 'r', linewidth=2)
-            #plt.xticks(xf, self.freqs)
+
+        def plot_curve(power, fit):
+            plt.plot(self.freqs, power, 'ko-', linewidth=2, alpha = 0.5)
+            plt.plot(self.freqs,  fit, 'r', linewidth=2)
             plt.ylabel(r'Log(Power) [$\mu V^2 / Hz$]')
             plt.xlabel('Frequency [Hz]')
             plt.title('Power spectrum and background spectrum fit')
             plt.legend(['Power spectrum', 'background fit'])
+            
+        if plot_type == 'session':
+            # average over lists so that plot is more readable
+            for list_idx, l in enumerate(lists):
+                log_power.append(np.mean(np.log10(self.tfm[list_idx]),1))
+                fit.append(np.log10(self.meanpower[list_idx]))
+            r2 = r2_score(np.array(log_power).T, np.array(fit).T, multioutput = 'uniform_average')
+            plot_curve(np.mean(log_power, 0), np.mean(fit, 0))
             return r2
         if plot_type == 'list':
-            for list_idx, l in enumerate(lists):
-                plt.plot(self.freqs, np.mean(np.log10(self.tfm[list_idx]),1), 'ko-', linewidth=2, alpha = 0.5)
-                plt.plot(self.freqs,  np.log10(self.meanpower[list_idx]), 'r', linewidth=2)
-                #plt.xticks(xf, self.freqs)
-                plt.ylabel(r'Log(Power) [$\mu V^2 / Hz$]')
-                plt.xlabel('Frequency [Hz]')
-                plt.title('Power spectrum and background spectrum fit')
-                plt.legend(['Power spectrum', 'background fit'])
+            if list_idx is None:
+                for list_idx, l in enumerate(lists):
+                    plot_curve(np.mean(np.log10(self.tfm[list_idx]),1), np.log10(self.meanpower[list_idx]))
+            else:
+                plot_curve(np.mean(np.log10(self.tfm[list_idx]),1), np.log10(self.meanpower[list_idx]))
         
     def raw_trace(self, freq_idx, list_idx=0, subplot = True, frac = 1, filtered = False, ax = None):
         # freq should be an index of freqs, not a frequency
