@@ -14,7 +14,7 @@ from sklearn.metrics import r2_score
 
 class P_episode(object):
     '''An object for handling the Better Oscillation Detection Methods
-    **Currently only handles encoding events**
+    **Currently only handles encoding events, compatible with FR1 data**
 
     Parameters:
         events - a pandas DataFrame containing the event or events (from the same session) being analyzed
