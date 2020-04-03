@@ -18,7 +18,8 @@ class P_episode(object):
 
     Parameters:
         events - a pandas DataFrame containing the event or events (from the same session) being analyzed
-        eeg - a ptsa timeseries object containing EEG data
+        eeg - a ptsa timeseries object containing EEG data. Should contain data for ONE ELECTRODE ONLY, 
+        		and therefore should not have a "channel" dimension. Should contain contiguous EEG for an entire session
 
         rel_start = beginning of event in ms relative to word onset
         rel_stop = end of event in ms relative to word onset
@@ -249,7 +250,6 @@ class P_episode(object):
         return detected
 
     def background_fit(self, plot_type = 'list', list_idx = None):
-        lists = self.word_events.list.unique()
         xf = range(1, len(self.freqs)) # to get log-sampled frequency tick marks
         log_power = []
         fit = []
@@ -264,7 +264,7 @@ class P_episode(object):
             
         if plot_type == 'session':
             # average over lists so that plot is more readable
-            for list_idx, l in enumerate(lists):
+            for list_idx, l in enumerate(self.lists):
                 log_power.append(np.mean(np.log10(self.tfm[list_idx]),1))
                 fit.append(np.log10(self.meanpower[list_idx]))
             r2 = r2_score(np.array(log_power).T, np.array(fit).T, multioutput = 'uniform_average')
@@ -272,12 +272,13 @@ class P_episode(object):
             return r2
         if plot_type == 'list':
             if list_idx is None:
-                for list_idx, l in enumerate(lists):
+                for list_idx, l in enumerate(self.lists):
                     plot_curve(np.mean(np.log10(self.tfm[list_idx]),1), np.log10(self.meanpower[list_idx]))
             else:
                 plot_curve(np.mean(np.log10(self.tfm[list_idx]),1), np.log10(self.meanpower[list_idx]))
+            return r2_score(np.mean(np.log10(self.tfm[list_idx]),1), np.log10(self.meanpower[list_idx]))
         
-    def raw_trace(self, freq_idx, list_idx=0, subplot = True, frac = 1, filtered = False, ax = None):
+    def raw_trace(self, freq_idx, list_idx=0, subplot = False, frac = 1, filtered = False, ax = None):
         # freq should be an index of freqs, not a frequency
         # frac parameter gives option for zooming in to, say, half the data, so oscillations are more visible
         if subplot == False:
@@ -456,7 +457,7 @@ def calc_subj_pep(subj, elecs = None, method = 'avg', freq_specs = (2, 120, 30),
 
 ## PLOTTING ##
 
-def plot_pepisode(subj,method,  freqs = None, ax = None):
+def plot_pepisode(subj, method, freqs = None, ax = None):
     if freqs is None:
         freqs =  np.round(np.logspace(np.log10(2), np.log10(120), 30), 2)
     if ax is None:
