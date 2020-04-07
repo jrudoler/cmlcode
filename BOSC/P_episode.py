@@ -321,8 +321,8 @@ class P_episode(object):
 
 ## END OF CLASS
 
-def calc_subj_pep(subj, elecs = None, method = 'avg', relstart = 300, relstop = 1301, freq_specs = (2, 120, 30), 
-    percentthresh=.95, numcyclesthresh=3, load_eeg = False, save = True, plot = False):
+def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 1301, freq_specs = (2, 120, 30), 
+    percentthresh=.95, numcyclesthresh=3, load_eeg = False, save = True, plot = False, kind = 'r1', experiment = 'FR1'):
     """
     
     Inputs:
@@ -361,7 +361,7 @@ def calc_subj_pep(subj, elecs = None, method = 'avg', relstart = 300, relstop = 
     for pair_str in elecs:
         chans = pair_str.split('-')
         print(chans)
-        data = cml.get_data_index(kind = 'r1'); data = data[data['experiment'] =='FR1']
+        data = cml.get_data_index(kind = kind); data = data[data['experiment'] ==experiment]
         sessions = data[data['subject']==subj]['session'].unique()
         pepisodes = None # events, freqs
         recalled = None # events, freqs   
@@ -369,7 +369,7 @@ def calc_subj_pep(subj, elecs = None, method = 'avg', relstart = 300, relstop = 
         for sess in sessions:
             try:
                 print('Loading session {} EEG'.format(sess))
-                reader = cml.CMLReader(subject = subj, experiment = 'FR1', session = sess)
+                reader = cml.CMLReader(subject = subj, experiment = experiment, session = sess)
                 all_events = reader.load('task_events')
                 path = '/home1/jrudoler/Saved_files/bosc_referencing/'+subj+'/'+method+'/eeg'
                 if not os.path.exists(path):
