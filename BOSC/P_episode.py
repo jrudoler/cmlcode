@@ -322,9 +322,9 @@ class P_episode(object):
 ## END OF CLASS
 
 def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 1301, freq_specs = (2, 120, 30), 
-    percentthresh=.95, numcyclesthresh=3, load_eeg = False, save = True, plot = False, kind = 'r1', experiment = 'FR1'):
+    percentthresh=.95, numcyclesthresh=3, load_eeg = False, save_eeg = False, save_result = False, plot = False, 
+    kind = 'r1', experiment = 'FR1', eeg_path = '', result_path = ''):
     """
-    
     Inputs:
     subj - subject string
     elecs - list of electrode pairs (strings)
@@ -337,7 +337,6 @@ def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 
     t - t-score at each frequency, comparing rec and nrec across events
     ** Note that tscore is not itself meaningful because events are not independent. Comparing these 
         tscores across subjects, however, is valid.
-
     """
     import numpy as np
     import scipy.stats as scp
@@ -347,6 +346,9 @@ def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 
     from ptsa.data.filters import ButterworthFilter
     import P_episode as pep
     
+    if save_eeg and load_eeg:
+        raise('Cannot save and load eeg simultaneously.')
+
     print('Subject: ', subj)
     if elecs is None:
         good_subj = pd.read_pickle('hippo_subject_pairs.csv')
@@ -371,11 +373,11 @@ def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 
                 print('Loading session {} EEG'.format(sess))
                 reader = cml.CMLReader(subject = subj, experiment = experiment, session = sess)
                 all_events = reader.load('task_events')
-                path = '/home1/jrudoler/Saved_files/bosc_referencing/'+subj+'/'+method+'/eeg'
-                if not os.path.exists(path):
-                    os.makedirs(path)
+                # path = '/home1/jrudoler/Saved_files/bosc_referencing/'+subj+'/'+method+'/eeg'
+                if not os.path.exists(eeg_path):
+                    os.makedirs(eeg_path)
                 if load_eeg:
-                    eeg = TimeSeries.from_hdf(path + '/session_' + str(sess) + '_' + pair_str)
+                    eeg = TimeSeries.from_hdf(eeg_path + 'session_' + str(sess) + '_' + pair_str)
                     bosc = P_episode(all_events, eeg, sr = eeg.samplerate.values,
                                     lowfreq = lowfreq, highfreq=highfreq, numfreqs = numfreqs)
                 elif method == 'bip': 
@@ -385,7 +387,7 @@ def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 
                     bip = ButterworthFilter(bip, freq_range=[58., 62.], filt_type='stop', order=4).filter()
                     print("Applying BOSC method!")
                     if save:
-                    	bip.to_hdf(path + '/session_' + str(sess) + '_' + pair_str)
+                    	bip.to_hdf(eeg_path + 'session_' + str(sess) + '_' + pair_str)
                     bosc = P_episode(all_events, bip, sr = bip.samplerate.values, 
                                     lowfreq = lowfreq, highfreq=highfreq, numfreqs = numfreqs)
 
@@ -401,7 +403,7 @@ def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 
                            - eeg.mean('channel')).mean('channel')
                     avg = ButterworthFilter(avg, freq_range=[58., 62.], filt_type='stop', order=4).filter()
                     if save:
-                    	avg.to_hdf(path + '/session_' + str(sess) + '_' + pair_str)
+                    	avg.to_hdf(eeg_path + '/session_' + str(sess) + '_' + pair_str)
                     bosc = P_episode(all_events, avg, sr = avg.samplerate.values,
                                     lowfreq = lowfreq, highfreq=highfreq, numfreqs = numfreqs)
                     
@@ -448,12 +450,14 @@ def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 
     rec = subj_pepisode[subj_recalled, :].mean(0)
     nrec = subj_pepisode[~subj_recalled, :].mean(0)
     all_pep = subj_pepisode.mean(0)
-    
+
+    if not os.path.exists(result_path):
+                    os.makedirs(result_path)
     if save:
-        np.save('theta_data/{}_all_{}'.format(subj, method), all_pep)
-        np.save('theta_data/{}_rec_{}'.format(subj, method), rec)
-        np.save('theta_data/{}_nrec_{}'.format(subj, method), nrec)
-        np.save('theta_data/{}_tscore_{}'.format(subj, method), subj_tscores)
+        np.save(result_path + '{}_all_{}'.format(subj, method), all_pep)
+        np.save(result_path + '{}_rec_{}'.format(subj, method), rec)
+        np.save(result_path + '{}_nrec_{}'.format(subj, method), nrec)
+        np.save(result_path + '{}_tscore_{}'.format(subj, method), subj_tscores)
     
     
     return all_pep, rec, nrec, subj_tscores
