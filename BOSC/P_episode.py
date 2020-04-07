@@ -447,25 +447,25 @@ def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 
                                                                     sum(subj_recalled), 
                                                                     sum(~subj_recalled)))
     
-    rec = subj_pepisode[subj_recalled, :].mean(0)
-    nrec = subj_pepisode[~subj_recalled, :].mean(0)
-    all_pep = subj_pepisode.mean(0)
+    pep_rec = subj_pepisode[subj_recalled, :].mean(0)
+    pep_nrec = subj_pepisode[~subj_recalled, :].mean(0)
+    pep_all = subj_pepisode.mean(0)
 
     if not os.path.exists(result_path):
                     os.makedirs(result_path)
     if save:
-        np.save(result_path + '{}_all_{}'.format(subj, method), all_pep)
-        np.save(result_path + '{}_rec_{}'.format(subj, method), rec)
-        np.save(result_path + '{}_nrec_{}'.format(subj, method), nrec)
+        np.save(result_path + '{}_all_{}'.format(subj, method), pep_all)
+        np.save(result_path + '{}_rec_{}'.format(subj, method), pep_rec)
+        np.save(result_path + '{}_nrec_{}'.format(subj, method), pep_nrec)
         np.save(result_path + '{}_tscore_{}'.format(subj, method), subj_tscores)
     
     
-    return all_pep, rec, nrec, subj_tscores
+    return pep_all, pep_rec, pep_nrec, subj_tscores
 
 
 ## PLOTTING ##
 
-def plot_pepisode(pep_rec, pep_nrec, freqs = np.round(np.logspace(np.log10(2), np.log10(120), 30), 2), ax = None, title = None):
+def plot_pepisode(pep_all, pep_rec, pep_nrec, freqs = np.round(np.logspace(np.log10(2), np.log10(120), 30), 2), ax = None, title = ''):
     """
     Function for plotting P_episode by frequency, averaged separately across events for recalled and not recalled words.
 
@@ -478,6 +478,7 @@ def plot_pepisode(pep_rec, pep_nrec, freqs = np.round(np.logspace(np.log10(2), n
     if ax is None:
         ax = plt.subplot(1,1,1)
 
+    ax.plot(freqs, pep_all, '-o', alpha = 0.5, label = 'All events')
     ax.plot(freqs, pep_rec, '-o', label = 'Recalled')
     ax.plot(freqs, pep_nrec, '-o', label = 'Not recalled')
 
@@ -491,34 +492,52 @@ def plot_pepisode(pep_rec, pep_nrec, freqs = np.round(np.logspace(np.log10(2), n
     plt.tight_layout()
 
 
-def plot_pepisode_multi_subj(subjects, method = 'bip', figsize = (12,10), freqs = None):
-    if freqs is None:
-        freqs =  np.round(np.logspace(np.log10(2), np.log10(120), 30), 2)
-    all_subj_pep_all = []
-    all_subj_pep_rec = []
-    all_subj_pep_nrec = []
-    all_subj_ttest = []
-    cnt = 0
-    success = []
-    for subj in subjects:
-        try:
-            pep_all = np.load('theta_data/{}_all_{}.npy'.format(subj, method))
-            pep_rec = np.load('theta_data/{}_rec_{}.npy'.format(subj, method))
-            pep_nrec = np.load('theta_data/{}_nrec_{}.npy'.format(subj, method))
-            tscore = np.load('theta_data/{}_tscore_{}.npy'.format(subj, method))
-            success.append(subj)
-        except:
-            continue
-        cnt += 1
-        all_subj_pep_all.append(pep_all)
-        all_subj_pep_rec.append(pep_rec)
-        all_subj_pep_nrec.append(pep_nrec)
-        all_subj_ttest.append(tscore)
-        
-    all_subj_pep_all = np.vstack(all_subj_pep_all)
-    all_subj_pep_rec = np.vstack(all_subj_pep_rec)
-    all_subj_pep_nrec = np.vstack(all_subj_pep_nrec)
-    all_subj_ttest = np.vstack(all_subj_ttest)
+def plot_pepisode_multi_subj(all_subj_pep_all = None, all_subj_pep_rec = None, all_subj_pep_nrec = None, all_subj_ttest = None, 
+    subjects = None, method = 'bip', figsize = (12,10), 
+    freqs = np.round(np.logspace(np.log10(2), np.log10(120), 30), 2), pep_path = ''):
+    
+    """
+    Inputs:
+    all_subj_pep_all - 2D array (subjects, frequencies) of P_episode values for all events
+    all_subj_pep_rec - 2D array (subjects, frequencies) of P_episode values for all events
+    all_subj_pep_nrec - 2D array (subjects, frequencies) of P_episode values for all events
+    all_subj_ttest - 2D array (subjects, frequencies) of tscores comparing successful and unsuccesful encoding/recall
+
+    Alternatively:
+    subjects - list of subject ID's
+    method - referencing method, either 'avg' or 'bip'
+    pep_path - path specifying location of files with P_episode information
+    """
+
+
+    if all_subj_pep_all is None and subjects is None:
+        raise('Must provide either P_episode statistics directly or specify a list of subjects \
+                along with a referencing method and path')
+    elif subjects is not None:
+        all_subj_pep_all = []
+        all_subj_pep_rec = []
+        all_subj_pep_nrec = []
+        all_subj_ttest = []
+        success = []
+        for subj in subjects:
+            try:
+                pep_all = np.load(pep_path + '{}_all_{}.npy'.format(subj, method))
+                pep_rec = np.load(pep_path + '{}_rec_{}.npy'.format(subj, method))
+                pep_nrec = np.load(pep_path + '{}_nrec_{}.npy'.format(subj, method))
+                tscore = np.load(pep_path + '{}_tscore_{}.npy'.format(subj, method))
+                success.append(subj)
+            except:
+                continue
+            all_subj_pep_all.append(pep_all)
+            all_subj_pep_rec.append(pep_rec)
+            all_subj_pep_nrec.append(pep_nrec)
+            all_subj_ttest.append(tscore)
+            
+        all_subj_pep_all = np.vstack(all_subj_pep_all)
+        all_subj_pep_rec = np.vstack(all_subj_pep_rec)
+        all_subj_pep_nrec = np.vstack(all_subj_pep_nrec)
+        all_subj_ttest = np.vstack(all_subj_ttest)
+
     t_all, p_all = scp.ttest_1samp(all_subj_ttest, popmean = 0, nan_policy='omit')
     plt.figure(figsize = figsize)
     ax1 = plt.subplot(311)
@@ -527,8 +546,7 @@ def plot_pepisode_multi_subj(subjects, method = 'bip', figsize = (12,10), freqs 
     ax1.fill_between(freqs, 
                      all_subj_pep_all.mean(0)+all_subj_pep_all.std(0)/np.sqrt(len(all_subj_pep_all)),
                      all_subj_pep_all.mean(0)-all_subj_pep_all.std(0)/np.sqrt(len(all_subj_pep_all)),
-                     color = 'b', alpha = 0.1
-                    )
+                     color = 'b', alpha = 0.1)
     
     ax2 = plt.subplot(312)
     ax2.plot(freqs, (all_subj_pep_rec-all_subj_pep_nrec).mean(0), c = 'slateblue', label = 'Recalled - Not Recalled')
@@ -538,10 +556,8 @@ def plot_pepisode_multi_subj(subjects, method = 'bip', figsize = (12,10), freqs 
     ax3.scatter(freqs[sig], t_all[sig], marker = '*', c = 'r', s = 50, label = 'Significant (p<0.05)')
     ax3.plot(freqs, t_all, '-', c = 'slateblue')
     
-    if method == 'bip':
-        ax1.set_title('Bipolar Reference: {} Subjects'.format(cnt), fontsize = 16) 
-    else: 
-        ax1.set_title('Average Reference: {} Subjects'.format(cnt), fontsize = 16)
+    ax1.set_title('{} Subjects'.format(len(success)), fontsize = 16) 
+
 
     ax3.set_xlabel('Frequency (Hz)', fontsize = 14)
     ax1.set_ylabel('P-episode', fontsize = 14)
