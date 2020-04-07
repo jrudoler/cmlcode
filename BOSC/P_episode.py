@@ -14,11 +14,12 @@ from sklearn.metrics import r2_score
 
 class P_episode(object):
     '''An object for handling the Better Oscillation Detection Methods
-    **Currently only handles encoding events**
+    **Currently only handles encoding events, compatible with FR1 data**
 
     Parameters:
         events - a pandas DataFrame containing the event or events (from the same session) being analyzed
-        eeg - a ptsa timeseries object containing EEG data
+        eeg - a ptsa timeseries object containing EEG data. Should contain data for ONE ELECTRODE ONLY, 
+        		and therefore should not have a "channel" dimension. Should contain contiguous EEG for an entire session
 
         rel_start = beginning of event in ms relative to word onset
         rel_stop = end of event in ms relative to word onset
@@ -41,7 +42,6 @@ class P_episode(object):
         freqs - an array of the frequencies calculated
         meanpower - a 2d array containing the mean power at each frequency
             (event, frequencies)
-        fit - contains the slope and y-intercept of the regression line
         tfm - a 3d array containing the origional time frequency matrix for each list
             (lists, frequencies, times)
         lists - lists for which BOSC was computed
@@ -249,39 +249,39 @@ class P_episode(object):
                 detected[episode[0]:episode[1]]=1#from start to end there is an episode
         return detected
 
-    def background_fit(self, plot_type = 'list'):
-        lists = self.word_events.list.unique()
+    def background_fit(self, plot_type = 'list', list_idx = None):
         xf = range(1, len(self.freqs)) # to get log-sampled frequency tick marks
         log_power = []
         fit = []
-        # average over lists so that plot is more readable
-        if plot_type == 'session':
-            for list_idx, l in enumerate(lists):
-                log_power.append(np.mean(np.log10(self.tfm[list_idx]),1))
-                fit.append(np.log10(self.meanpower[list_idx]))
-            r2 = r2_score(np.array(log_power).T, np.array(fit).T, multioutput = 'uniform_average')
-            plt.plot(self.freqs, np.mean(log_power, 0), 'ko-', linewidth=2, alpha = 0.5)
-            plt.plot(self.freqs,  np.mean(fit, 0), 'r', linewidth=2)
-            #plt.xticks(xf, self.freqs)
+
+        def plot_curve(power, fit):
+            plt.plot(self.freqs, power, 'ko-', linewidth=2, alpha = 0.5)
+            plt.plot(self.freqs,  fit, 'r', linewidth=2)
             plt.ylabel(r'Log(Power) [$\mu V^2 / Hz$]')
             plt.xlabel('Frequency [Hz]')
             plt.title('Power spectrum and background spectrum fit')
             plt.legend(['Power spectrum', 'background fit'])
+            
+        if plot_type == 'session':
+            # average over lists so that plot is more readable
+            for list_idx, l in enumerate(self.lists):
+                log_power.append(np.mean(np.log10(self.tfm[list_idx]),1))
+                fit.append(np.log10(self.meanpower[list_idx]))
+            r2 = r2_score(np.array(log_power).T, np.array(fit).T, multioutput = 'uniform_average')
+            plot_curve(np.mean(log_power, 0), np.mean(fit, 0))
             return r2
         if plot_type == 'list':
-            for list_idx, l in enumerate(lists):
-                plt.plot(self.freqs, np.mean(np.log10(self.tfm[list_idx]),1), 'ko-', linewidth=2, alpha = 0.5)
-                plt.plot(self.freqs,  np.log10(self.meanpower[list_idx]), 'r', linewidth=2)
-                #plt.xticks(xf, self.freqs)
-                plt.ylabel(r'Log(Power) [$\mu V^2 / Hz$]')
-                plt.xlabel('Frequency [Hz]')
-                plt.title('Power spectrum and background spectrum fit')
-                plt.legend(['Power spectrum', 'background fit'])
+            if list_idx is None:
+                for list_idx, l in enumerate(self.lists):
+                    plot_curve(np.mean(np.log10(self.tfm[list_idx]),1), np.log10(self.meanpower[list_idx]))
+            else:
+                plot_curve(np.mean(np.log10(self.tfm[list_idx]),1), np.log10(self.meanpower[list_idx]))
+            return r2_score(np.mean(np.log10(self.tfm[list_idx]),1), np.log10(self.meanpower[list_idx]))
         
-    def raw_trace(self, freq_idx, list_idx=0, subplot = True, frac = 1, filtered = False, ax = None):
+    def raw_trace(self, freq_idx, list_idx=0, frac = 1, filtered = False, ax = None):
         # freq should be an index of freqs, not a frequency
         # frac parameter gives option for zooming in to, say, half the data, so oscillations are more visible
-        if subplot == False:
+        if ax is None:
             ax = plt.subplot(1,1,1)
         bools = np.logical_and(self.eeg.time >= self.list_times[list_idx][0], 
                                self.eeg.time < self.list_times[list_idx][-1])
@@ -321,7 +321,8 @@ class P_episode(object):
 
 ## END OF CLASS
 
-def calc_subj_pep(subj, elecs = None, method = 'avg', freq_specs = (2, 120, 30), load_eeg = False, save = True, plot = False):
+def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 1301, freq_specs = (2, 120, 30), 
+    percentthresh=.95, numcyclesthresh=3, load_eeg = False, save = True, plot = False, kind = 'r1', experiment = 'FR1'):
     """
     
     Inputs:
@@ -334,6 +335,9 @@ def calc_subj_pep(subj, elecs = None, method = 'avg', freq_specs = (2, 120, 30),
     rec - average Pepisode for recalled words at each frequency
     nrec - average Pepisode for non-recalled words at each frequency
     t - t-score at each frequency, comparing rec and nrec across events
+    ** Note that tscore is not itself meaningful because events are not independent. Comparing these 
+        tscores across subjects, however, is valid.
+
     """
     import numpy as np
     import scipy.stats as scp
@@ -357,7 +361,7 @@ def calc_subj_pep(subj, elecs = None, method = 'avg', freq_specs = (2, 120, 30),
     for pair_str in elecs:
         chans = pair_str.split('-')
         print(chans)
-        data = cml.get_data_index(kind = 'r1'); data = data[data['experiment'] =='FR1']
+        data = cml.get_data_index(kind = kind); data = data[data['experiment'] ==experiment]
         sessions = data[data['subject']==subj]['session'].unique()
         pepisodes = None # events, freqs
         recalled = None # events, freqs   
@@ -365,13 +369,13 @@ def calc_subj_pep(subj, elecs = None, method = 'avg', freq_specs = (2, 120, 30),
         for sess in sessions:
             try:
                 print('Loading session {} EEG'.format(sess))
-                reader = cml.CMLReader(subject = subj, experiment = 'FR1', session = sess)
+                reader = cml.CMLReader(subject = subj, experiment = experiment, session = sess)
                 all_events = reader.load('task_events')
                 path = '/home1/jrudoler/Saved_files/bosc_referencing/'+subj+'/'+method+'/eeg'
                 if not os.path.exists(path):
                     os.makedirs(path)
                 if load_eeg:
-                    eeg = TimeSeries.from_hdf(path + '/session_' + str(sess))
+                    eeg = TimeSeries.from_hdf(path + '/session_' + str(sess) + '_' + pair_str)
                     bosc = P_episode(all_events, eeg, sr = eeg.samplerate.values,
                                     lowfreq = lowfreq, highfreq=highfreq, numfreqs = numfreqs)
                 elif method == 'bip': 
@@ -381,7 +385,7 @@ def calc_subj_pep(subj, elecs = None, method = 'avg', freq_specs = (2, 120, 30),
                     bip = ButterworthFilter(bip, freq_range=[58., 62.], filt_type='stop', order=4).filter()
                     print("Applying BOSC method!")
                     if save:
-                    	bip.to_hdf(path + '/session_' + str(sess))
+                    	bip.to_hdf(path + '/session_' + str(sess) + '_' + pair_str)
                     bosc = P_episode(all_events, bip, sr = bip.samplerate.values, 
                                     lowfreq = lowfreq, highfreq=highfreq, numfreqs = numfreqs)
 
@@ -397,7 +401,7 @@ def calc_subj_pep(subj, elecs = None, method = 'avg', freq_specs = (2, 120, 30),
                            - eeg.mean('channel')).mean('channel')
                     avg = ButterworthFilter(avg, freq_range=[58., 62.], filt_type='stop', order=4).filter()
                     if save:
-                    	avg.to_hdf(path + '/session_' + str(sess))
+                    	avg.to_hdf(path + '/session_' + str(sess) + '_' + pair_str)
                     bosc = P_episode(all_events, avg, sr = avg.samplerate.values,
                                     lowfreq = lowfreq, highfreq=highfreq, numfreqs = numfreqs)
                     
@@ -426,7 +430,7 @@ def calc_subj_pep(subj, elecs = None, method = 'avg', freq_specs = (2, 120, 30),
         subj_recalled = recalled if subj_recalled is None else np.vstack([subj_recalled, recalled])
         subj_tscores = tscore if subj_tscores is None else np.vstack([subj_tscores, tscore])
         if np.isnan(subj_tscores).all():
-            raise Exception('Too many nan')
+            raise Exception('Too many nan in T-scores')
     if subj_pepisode.ndim > 2: #if multiple electrode pairs, average over pairs
         print("Averaging over {} electrodes for subject {}".format(subj_pepisode.shape[2], subj))
         subj_pepisode = subj_pepisode.mean(2)
@@ -457,22 +461,24 @@ def calc_subj_pep(subj, elecs = None, method = 'avg', freq_specs = (2, 120, 30),
 
 ## PLOTTING ##
 
-def plot_pepisode(subj,method,  freqs = None, ax = None):
-    if freqs is None:
-        freqs =  np.round(np.logspace(np.log10(2), np.log10(120), 30), 2)
+def plot_pepisode(pep_rec, pep_nrec, freqs = np.round(np.logspace(np.log10(2), np.log10(120), 30), 2), ax = None, title = None):
+    """
+    Function for plotting P_episode by frequency, averaged separately across events for recalled and not recalled words.
+
+    Inputs:
+    pep_rec - 1D array-like containing P_episode for recalled events. Length equal to number of frequencies
+    pep_nrec - 1D array-like containing P_episode for non-recalled events. Length equal to number of frequencies
+    freqs - Frequencies for which P_episode is calculated. Length must equal pep_rec and pep_nrec.
+    
+    """
     if ax is None:
         ax = plt.subplot(1,1,1)
-    pep_rec = np.load('theta_data/{}_rec_{}.npy'.format(subj, method))
-    pep_nrec = np.load('theta_data/{}_nrec_{}.npy'.format(subj, method))
-    tscore = np.load('theta_data/{}_tscore_{}.npy'.format(subj, method))
 
     ax.plot(freqs, pep_rec, '-o', label = 'Recalled')
     ax.plot(freqs, pep_nrec, '-o', label = 'Not recalled')
 
-    if method == 'bip':
-        ax.set_title('Subject {}: Bipolar Reference'.format(subj), fontsize = 16) 
-    else: 
-        ax.set_title('Subject {}: Average Reference'.format(subj), fontsize = 16)
+    ax.set_title(title, fontsize = 16) 
+
 
     ax.set_xlabel('Frequency (Hz)', fontsize = 14)
     ax.set_ylabel('P-episode', fontsize = 14)
