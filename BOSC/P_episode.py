@@ -278,10 +278,10 @@ class P_episode(object):
                 plot_curve(np.mean(np.log10(self.tfm[list_idx]),1), np.log10(self.meanpower[list_idx]))
             return r2_score(np.mean(np.log10(self.tfm[list_idx]),1), np.log10(self.meanpower[list_idx]))
         
-    def raw_trace(self, freq_idx, list_idx=0, subplot = False, frac = 1, filtered = False, ax = None):
+    def raw_trace(self, freq_idx, list_idx=0, frac = 1, filtered = False, ax = None):
         # freq should be an index of freqs, not a frequency
         # frac parameter gives option for zooming in to, say, half the data, so oscillations are more visible
-        if subplot == False:
+        if ax is None:
             ax = plt.subplot(1,1,1)
         bools = np.logical_and(self.eeg.time >= self.list_times[list_idx][0], 
                                self.eeg.time < self.list_times[list_idx][-1])
@@ -321,7 +321,8 @@ class P_episode(object):
 
 ## END OF CLASS
 
-def calc_subj_pep(subj, elecs = None, method = 'avg', freq_specs = (2, 120, 30), load_eeg = False, save = True, plot = False):
+def calc_subj_pep(subj, elecs = None, method = 'avg', relstart = 300, relstop = 1301, freq_specs = (2, 120, 30), 
+    percentthresh=.95, numcyclesthresh=3, load_eeg = False, save = True, plot = False):
     """
     
     Inputs:
@@ -334,6 +335,9 @@ def calc_subj_pep(subj, elecs = None, method = 'avg', freq_specs = (2, 120, 30),
     rec - average Pepisode for recalled words at each frequency
     nrec - average Pepisode for non-recalled words at each frequency
     t - t-score at each frequency, comparing rec and nrec across events
+    ** Note that tscore is not itself meaningful because events are not independent. Comparing these 
+        tscores across subjects, however, is valid.
+
     """
     import numpy as np
     import scipy.stats as scp
@@ -426,7 +430,7 @@ def calc_subj_pep(subj, elecs = None, method = 'avg', freq_specs = (2, 120, 30),
         subj_recalled = recalled if subj_recalled is None else np.vstack([subj_recalled, recalled])
         subj_tscores = tscore if subj_tscores is None else np.vstack([subj_tscores, tscore])
         if np.isnan(subj_tscores).all():
-            raise Exception('Too many nan')
+            raise Exception('Too many nan in T-scores')
     if subj_pepisode.ndim > 2: #if multiple electrode pairs, average over pairs
         print("Averaging over {} electrodes for subject {}".format(subj_pepisode.shape[2], subj))
         subj_pepisode = subj_pepisode.mean(2)
@@ -457,22 +461,24 @@ def calc_subj_pep(subj, elecs = None, method = 'avg', freq_specs = (2, 120, 30),
 
 ## PLOTTING ##
 
-def plot_pepisode(subj, method, freqs = None, ax = None):
-    if freqs is None:
-        freqs =  np.round(np.logspace(np.log10(2), np.log10(120), 30), 2)
+def plot_pepisode(pep_rec, pep_nrec, freqs = np.round(np.logspace(np.log10(2), np.log10(120), 30), 2), ax = None, title = None):
+    """
+    Function for plotting P_episode by frequency, averaged separately across events for recalled and not recalled words.
+
+    Inputs:
+    pep_rec - 1D array-like containing P_episode for recalled events. Length equal to number of frequencies
+    pep_nrec - 1D array-like containing P_episode for non-recalled events. Length equal to number of frequencies
+    freqs - Frequencies for which P_episode is calculated. Length must equal pep_rec and pep_nrec.
+    
+    """
     if ax is None:
         ax = plt.subplot(1,1,1)
-    pep_rec = np.load('theta_data/{}_rec_{}.npy'.format(subj, method))
-    pep_nrec = np.load('theta_data/{}_nrec_{}.npy'.format(subj, method))
-    tscore = np.load('theta_data/{}_tscore_{}.npy'.format(subj, method))
 
     ax.plot(freqs, pep_rec, '-o', label = 'Recalled')
     ax.plot(freqs, pep_nrec, '-o', label = 'Not recalled')
 
-    if method == 'bip':
-        ax.set_title('Subject {}: Bipolar Reference'.format(subj), fontsize = 16) 
-    else: 
-        ax.set_title('Subject {}: Average Reference'.format(subj), fontsize = 16)
+    ax.set_title(title, fontsize = 16) 
+
 
     ax.set_xlabel('Frequency (Hz)', fontsize = 14)
     ax.set_ylabel('P-episode', fontsize = 14)
