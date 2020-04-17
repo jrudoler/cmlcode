@@ -58,6 +58,7 @@ class P_episode(object):
     			percentthresh=.95, numcyclesthresh=3):
         
         self.events = events
+        self.event_type = event_type
         self.interest_events = events[events.type == event_type]
         self.width = width
         if sr is None:
@@ -317,14 +318,14 @@ class P_episode(object):
             target_signal = self.eeg[bools]
         osc = np.copy(target_signal)
         #where the oscilations are
-        osc[np.nonzero(self.detected[list_idx, freq_idx][:cutoff_idx]==0)[0]]=None
+        osc[np.nonzero(self.detected[list_idx, freq_idx][:-1]==0)[0]]=None #TODO: incompatible length with self.detected necessitates [:-1]
         time = range(len(target_signal))/self.sr
         #plot the normal graph
         ax.plot(time, target_signal,'k', linewidth=.25, label = 'EEG Time Series')
         #highlight the oscilations
         ax.plot(time, osc, 'r', linewidth=2, label = 'Detected Oscillations')
         #shade word presentation events
-        if self.event_type == 'WORD'
+        if (self.event_type == 'WORD') & np.any(np.isin(self.events.type, ['WORD_OFF'])):
             local_events = self.events[np.logical_or(self.events.type =='WORD', self.events.type =='WORD_OFF')]
             local_events = local_events[np.logical_and(
                                             local_events.eegoffset*(1000/self.sr)>=self.list_times[list_idx][0],
@@ -340,18 +341,18 @@ class P_episode(object):
                                             self.interest_events.eegoffset*(1000/self.sr)<=self.list_times[list_idx][-1]
                                         )]
             list_start = self.list_times[list_idx][0]
-            for start in local_events[local_events.type == 'REC_WORD'].eegoffset*(1000/self.sr):
-                ax.axvspan((start-list_start)/1000, (start + relstop - list_start)/1000, alpha = 0.2)
+            for start in local_events.eegoffset.values*(1000/self.sr):
+                ax.axvspan((start-list_start)/1000, (start + self.relstop - list_start)/1000, alpha = 0.2)
         ax.set_ylabel(r'Voltage [$\mu V$]'); ax.set_xlabel('Time [s]')
         ax.set_title('Frequency: {} Hz'.format(round(self.freqs[freq_idx],2)))
-        if subplot == False:
+        if ax is None:
             ax.legend(['EEG Time Series', 'Detected Oscillations', 'Word Presentation'])
 
 ## END OF CLASS
 
 def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 1301, freq_specs = (2, 120, 30), 
     percentthresh=.95, numcyclesthresh=3, load_eeg = False, save_eeg = False, save_result = False, plot = False, 
-    kind = 'r1', experiment = 'FR1', eeg_path = '', result_path = ''):
+    kind = 'r1', experiment = 'FR1', eeg_path = '~/', result_path = '~/'):
     """
     Inputs:
     subj - subject string
@@ -360,9 +361,10 @@ def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 
     freq_specs - tuple of (low_freq, high_freq, num_freqs) for background fitting in BOSC.
     
     Returns:
-    rec - average Pepisode for recalled words at each frequency
-    nrec - average Pepisode for non-recalled words at each frequency
-    t - t-score at each frequency, comparing rec and nrec across events
+    pep_all - average Pepisode for all words at each frequency
+    pep_rec - average Pepisode for recalled words at each frequency
+    pep_nrec - average Pepisode for non-recalled words at each frequency
+    subj_tscores - t-score at each frequency, comparing rec and nrec across events
     ** Note that tscore is not itself meaningful because events are not independent. Comparing these 
         tscores across subjects, however, is valid.
     """
@@ -401,7 +403,7 @@ def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 
                 print('Loading session {} EEG'.format(sess))
                 reader = cml.CMLReader(subject = subj, experiment = experiment, session = sess)
                 all_events = reader.load('task_events')
-                # path = '/home1/jrudoler/Saved_files/bosc_referencing/'+subj+'/'+method+'/eeg'
+                # path = '/home1/jrudoler/Saved_files/bosc_referencing/'+subj+'/'+method+'/eeg/'
                 if not os.path.exists(eeg_path):
                     os.makedirs(eeg_path)
                 if load_eeg:
@@ -414,7 +416,7 @@ def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 
                     bip = reader.load_eeg(scheme = pairs[pairs.label ==pair_str]).to_ptsa().mean(['event', 'channel'])
                     bip = ButterworthFilter(bip, freq_range=[58., 62.], filt_type='stop', order=4).filter()
                     print("Applying BOSC method!")
-                    if save:
+                    if save_eeg:
                     	bip.to_hdf(eeg_path + 'session_' + str(sess) + '_' + pair_str)
                     bosc = P_episode(all_events, bip, sr = bip.samplerate.values, 
                                     lowfreq = lowfreq, highfreq=highfreq, numfreqs = numfreqs)
@@ -431,7 +433,7 @@ def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 
                     avg = (eeg[contacts.label.str.contains(chans[0]) | contacts.label.str.contains(chans[1]), :] \
                            - eeg.mean('channel')).mean('channel')
                     avg = ButterworthFilter(avg, freq_range=[58., 62.], filt_type='stop', order=4).filter()
-                    if save:
+                    if save_eeg:
                     	avg.to_hdf(eeg_path + '/session_' + str(sess) + '_' + pair_str)
                     bosc = P_episode(all_events, avg, sr = avg.samplerate.values,
                                     lowfreq = lowfreq, highfreq=highfreq, numfreqs = numfreqs)
@@ -480,9 +482,9 @@ def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 
     pep_nrec = subj_pepisode[~subj_recalled, :].mean(0)
     pep_all = subj_pepisode.mean(0)
 
-    if not os.path.exists(result_path):
-                    os.makedirs(result_path)
-    if save:
+    if save_result:
+        if not os.path.exists(result_path):
+            os.makedirs(result_path)
         np.save(result_path + '{}_all_{}'.format(subj, method), pep_all)
         np.save(result_path + '{}_rec_{}'.format(subj, method), pep_rec)
         np.save(result_path + '{}_nrec_{}'.format(subj, method), pep_nrec)
