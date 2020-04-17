@@ -21,8 +21,10 @@ class P_episode(object):
         eeg - a ptsa timeseries object containing EEG data. Should contain data for ONE ELECTRODE ONLY, 
         		and therefore should not have a "channel" dimension. Should contain contiguous EEG for an entire session
 
-        rel_start = beginning of event in ms relative to word onset
-        rel_stop = end of event in ms relative to word onset
+        event_type - 'WORD' for encoding, 'REC_WORD' for retrieval.
+
+        relstart = beginning of event in ms relative to word onset
+        relstop = end of event in ms relative to word onset
 
         width - the length of the MorletWaveletFilter
         sr - the sample rate for the EEG signal. If none, it uses CMLReader to find it 
@@ -52,11 +54,12 @@ class P_episode(object):
     
     '''
     
-    def __init__(self, events, eeg, relstart = 300, relstop = 1301, width=5, sr=None, lowfreq=2, highfreq=120, numfreqs=30, 
+    def __init__(self, events, eeg, event_type = 'WORD', relstart = 300, relstop = 1301, width=5, sr=None, lowfreq=2, highfreq=120, numfreqs=30, 
     			percentthresh=.95, numcyclesthresh=3):
         
         self.events = events
-        self.word_events = events[events.type == 'WORD']
+        self.event_type = event_type
+        self.interest_events = events[events.type == event_type]
         self.width = width
         if sr is None:
             self.sr = eeg.samplerate.values
@@ -73,7 +76,7 @@ class P_episode(object):
         self.__BOSC_tf()
         
         self.detected = [[[] for i in range(len(self.freqs))] for j in range(len(self.lists))] # will be list, freqs, time
-        self.Pepisode = np.zeros((len(self.word_events), len(self.freqs))) # will be events, freqs
+        self.Pepisode = np.zeros((len(self.interest_events), len(self.freqs))) # will be events, freqs
         
         self.meanpower = []# will be events by frequency
         # NB: meanpower is the estimated background power spectrum (average power as a function of frequency)
@@ -94,7 +97,7 @@ class P_episode(object):
             for num, freq in enumerate(self.freqs):
                 self.detected[i][num] = np.zeros(len(self.tfm[i][num]))
                 
-        for ev_idx, event in enumerate(self.word_events.iterrows()):
+        for ev_idx, event in enumerate(self.interest_events.iterrows()):
             event = event[1]
             #STEP FOUR: Set the target signal in which oscillations will be detected.
             lst_idx = self.lists.index(event.list)
@@ -116,7 +119,7 @@ class P_episode(object):
         self.powerthresh = np.array(self.powerthresh)
         self.durthresh = np.array(self.durthresh)
     
-    
+
     def __BOSC_tf(self):
         '''
         Gets the time frequency matrix for events
@@ -133,12 +136,8 @@ class P_episode(object):
         pows = wf.filter().data  #output is freqs, events, and time
         
         # inconsistent event labeling
-        if np.any(np.isin(self.events.type, ['ORIENT'])):
-            start_type = 'ORIENT'
-            end_type = 'DISTRACT_START'
-        else:
-            start_type = 'ENCODING_START'
-            end_type = 'ENCODING_END'
+        
+        start_type, end_type = self.__get_event_keywords(self)
         
         list_events = self.events[np.logical_or(self.events.type==start_type, self.events.type==end_type)]
         while list_events.type.iloc[0] != start_type:
@@ -165,8 +164,22 @@ class P_episode(object):
             self.list_times.append(self.eeg[(self.eeg.time >= start) & (self.eeg.time <= end)].time.data)
             #only record successful lists
             self.lists.append(lst)
-        self.word_events = self.word_events[np.isin(self.word_events.list, self.lists)]
-        
+        self.interest_events = self.interest_events[np.isin(self.interest_events.list, self.lists)]
+    
+    def __get_event_keywords(self):
+        if self.event_type == 'WORD': 
+            if np.any(np.isin(self.events.type, ['ORIENT'])):
+                start_type = 'ORIENT'
+                end_type = 'DISTRACT_START'
+            else:
+                start_type = 'ENCODING_START'
+                end_type = 'ENCODING_END'
+        elif self.event_type == 'REC_WORD':
+            start_type = 'REC_START'
+            end_type = 'REC_END'
+        else:
+            raise Exception('event_type' + self.event_type + 'not supported. Use either WORD or REC_WORD.')
+        return start_type, end_type   
  
     def __BOSC_bgfit(self, tfm):
         '''
@@ -206,7 +219,7 @@ class P_episode(object):
         timecourse - the power timecourse (at one frequency of interest)
 
         durthresh - duration threshold in  required to be deemed oscillatory
-        powthresh - power threshold
+        powthrseh - power threshold
 
         returns:
         detected - a binary vector containing the value 1 for times at
@@ -216,14 +229,14 @@ class P_episode(object):
         To calculate Pepisode:
         Pepisode=length(find(detected))/(length(detected));
         '''
-        def diff(x):
-            y = [np.subtract(x[num+1],x[num], dtype=np.float32) for num in range(len(x)-1)]
-            return np.array(y)
+        # def diff(x):
+        #     y = [np.subtract(x[num+1],x[num], dtype=np.float32) for num in range(len(x)-1)]
+        #     return np.array(y)
 
         nT=len(timecourse)-1 #number of time points, used as the last time point
 
-        x = timecourse>powthresh #Step 1: power threshold
-        dx = diff(x)
+        x = timecourse > powthresh #Step 1: power threshold
+        dx = np.diff(x)
 
         # pos represents the times where the timecourse goes above the threshhold
         # neg represents the times where the timecourse dips below the threshhold
@@ -233,7 +246,7 @@ class P_episode(object):
         detected = np.zeros(len(timecourse))#this will be the returned list
         # now do all the special cases to handle the edges
         # h is the start time and the end time of episodes
-        if pos.size==0 and neg.size==0:#no positive or negetive changes
+        if pos.size==0 and neg.size==0: #no positive or negative changes
             H = np.array([[0], [nT]]) if x.any()>0 else np.array([[]])
             # all values are above the threshhold or no values are above the threshhold
         elif pos.size==0: H=np.stack([[0], [neg[0]]], axis=0) # the timecourse starts on an episode, and dips below
@@ -250,9 +263,14 @@ class P_episode(object):
         return detected
 
     def background_fit(self, plot_type = 'list', list_idx = None):
-        xf = range(1, len(self.freqs)) # to get log-sampled frequency tick marks
-        log_power = []
-        fit = []
+        """
+        Visualize the data's fit to the 1/f background spectrum
+        
+        Parameters:
+        plot_type - if 'session', average over all lists. If list, plot for specified list.
+        list_idx - index of list to plot. Only required if plot_type is 'list'.
+        """
+
 
         def plot_curve(power, fit):
             plt.plot(self.freqs, power, 'ko-', linewidth=2, alpha = 0.5)
@@ -263,6 +281,8 @@ class P_episode(object):
             plt.legend(['Power spectrum', 'background fit'])
             
         if plot_type == 'session':
+            log_power = []
+            fit = []
             # average over lists so that plot is more readable
             for list_idx, l in enumerate(self.lists):
                 log_power.append(np.mean(np.log10(self.tfm[list_idx]),1))
@@ -278,9 +298,15 @@ class P_episode(object):
                 plot_curve(np.mean(np.log10(self.tfm[list_idx]),1), np.log10(self.meanpower[list_idx]))
             return r2_score(np.mean(np.log10(self.tfm[list_idx]),1), np.log10(self.meanpower[list_idx]))
         
-    def raw_trace(self, freq_idx, list_idx=0, frac = 1, filtered = False, ax = None):
-        # freq should be an index of freqs, not a frequency
-        # frac parameter gives option for zooming in to, say, half the data, so oscillations are more visible
+    def raw_trace(self, freq_idx, list_idx=0, filtered = False, ax = None):
+        """
+        Visualize the raw_eeg at a specific frequency, with significant oscillations highlighted.
+
+        Parameters:
+        freq_idx - index of 1D array in P_episode().freqs attribute
+        list_idx - index of list to visualize
+
+        """
         if ax is None:
             ax = plt.subplot(1,1,1)
         bools = np.logical_and(self.eeg.time >= self.list_times[list_idx][0], 
@@ -293,37 +319,43 @@ class P_episode(object):
             target_signal = np.real(complex_mat)[freq_idx][bools]
         else:
             target_signal = self.eeg[bools]
-        cutoff_idx = int(frac*len(target_signal))
-        target_signal = target_signal[:cutoff_idx]
         osc = np.copy(target_signal)
         #where the oscilations are
-        osc[np.nonzero(self.detected[list_idx, freq_idx][:cutoff_idx]==0)[0]]=None
+        osc[np.nonzero(self.detected[list_idx, freq_idx][:-1]==0)[0]]=None #TODO: incompatible length with self.detected necessitates [:-1]
         time = range(len(target_signal))/self.sr
         #plot the normal graph
         ax.plot(time, target_signal,'k', linewidth=.25, label = 'EEG Time Series')
         #highlight the oscilations
         ax.plot(time, osc, 'r', linewidth=2, label = 'Detected Oscillations')
         #shade word presentation events
-        local_events = self.events[np.logical_or(self.events.type =='WORD', self.events.type =='WORD_OFF')]
-        local_events = local_events[np.logical_and(
-                                        local_events.eegoffset*(1000/self.sr)>=self.list_times[list_idx][0],
-                                        local_events.eegoffset*(1000/self.sr)<=self.list_times[list_idx][-1]
-                                    )]
-        list_start = self.list_times[list_idx][0]
-        list_end = self.list_times[list_idx][int(len(self.list_times[list_idx])*frac)-1]
-        for start, end in zip(local_events[local_events.type == 'WORD'].eegoffset*(1000/self.sr),
-                             local_events[local_events.type == 'WORD_OFF'].eegoffset*(1000/self.sr)):       
-            ax.axvspan((start - list_start)/1000, (end - list_start)/1000, alpha = 0.2)
+        if (self.event_type == 'WORD') & np.any(np.isin(self.events.type, ['WORD_OFF'])):
+            local_events = self.events[np.logical_or(self.events.type =='WORD', self.events.type =='WORD_OFF')]
+            local_events = local_events[np.logical_and(
+                                            local_events.eegoffset*(1000/self.sr)>=self.list_times[list_idx][0],
+                                            local_events.eegoffset*(1000/self.sr)<=self.list_times[list_idx][-1]
+                                        )]
+            list_start = self.list_times[list_idx][0]
+            for start, end in zip(local_events[local_events.type == 'WORD'].eegoffset*(1000/self.sr),
+                                 local_events[local_events.type == 'WORD_OFF'].eegoffset*(1000/self.sr)):       
+                ax.axvspan((start - list_start)/1000, (end - list_start)/1000, alpha = 0.2)
+        else:
+            local_events = self.interest_events[np.logical_and(
+                                            self.interest_events.eegoffset*(1000/self.sr)>=self.list_times[list_idx][0],
+                                            self.interest_events.eegoffset*(1000/self.sr)<=self.list_times[list_idx][-1]
+                                        )]
+            list_start = self.list_times[list_idx][0]
+            for start in local_events.eegoffset.values*(1000/self.sr):
+                ax.axvspan((start-list_start)/1000, (start + self.relstop - list_start)/1000, alpha = 0.2)
         ax.set_ylabel(r'Voltage [$\mu V$]'); ax.set_xlabel('Time [s]')
         ax.set_title('Frequency: {} Hz'.format(round(self.freqs[freq_idx],2)))
-        if subplot == False:
+        if ax is None:
             ax.legend(['EEG Time Series', 'Detected Oscillations', 'Word Presentation'])
 
 ## END OF CLASS
 
 def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 1301, freq_specs = (2, 120, 30), 
     percentthresh=.95, numcyclesthresh=3, load_eeg = False, save_eeg = False, save_result = False, plot = False, 
-    kind = 'r1', experiment = 'FR1', eeg_path = '', result_path = ''):
+    kind = 'r1', experiment = 'FR1', eeg_path = '~/', result_path = '~/'):
     """
     Inputs:
     subj - subject string
@@ -332,9 +364,10 @@ def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 
     freq_specs - tuple of (low_freq, high_freq, num_freqs) for background fitting in BOSC.
     
     Returns:
-    rec - average Pepisode for recalled words at each frequency
-    nrec - average Pepisode for non-recalled words at each frequency
-    t - t-score at each frequency, comparing rec and nrec across events
+    pep_all - average Pepisode for all words at each frequency
+    pep_rec - average Pepisode for recalled words at each frequency
+    pep_nrec - average Pepisode for non-recalled words at each frequency
+    subj_tscores - t-score at each frequency, comparing rec and nrec across events
     ** Note that tscore is not itself meaningful because events are not independent. Comparing these 
         tscores across subjects, however, is valid.
     """
@@ -373,7 +406,7 @@ def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 
                 print('Loading session {} EEG'.format(sess))
                 reader = cml.CMLReader(subject = subj, experiment = experiment, session = sess)
                 all_events = reader.load('task_events')
-                # path = '/home1/jrudoler/Saved_files/bosc_referencing/'+subj+'/'+method+'/eeg'
+                # path = '/home1/jrudoler/Saved_files/bosc_referencing/'+subj+'/'+method+'/eeg/'
                 if not os.path.exists(eeg_path):
                     os.makedirs(eeg_path)
                 if load_eeg:
@@ -386,7 +419,7 @@ def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 
                     bip = reader.load_eeg(scheme = pairs[pairs.label ==pair_str]).to_ptsa().mean(['event', 'channel'])
                     bip = ButterworthFilter(bip, freq_range=[58., 62.], filt_type='stop', order=4).filter()
                     print("Applying BOSC method!")
-                    if save:
+                    if save_eeg:
                     	bip.to_hdf(eeg_path + 'session_' + str(sess) + '_' + pair_str)
                     bosc = P_episode(all_events, bip, sr = bip.samplerate.values, 
                                     lowfreq = lowfreq, highfreq=highfreq, numfreqs = numfreqs)
@@ -396,13 +429,14 @@ def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 
                     #average eeg
                     eeg = reader.load_eeg(scheme = contacts).to_ptsa().mean('event')
                     #all zeros from a broken lead leads to -inf power, which results in a LinAlg error for log-log fit
+                    #TODO: verify this channel exclusion doesn't cause any problems. Maybe print a message or raise an error?
                     bad_chan_mask = ~np.all(eeg.values==0, axis = 1)
                     contacts = contacts[bad_chan_mask]
                     eeg = eeg[bad_chan_mask, :]
                     avg = (eeg[contacts.label.str.contains(chans[0]) | contacts.label.str.contains(chans[1]), :] \
                            - eeg.mean('channel')).mean('channel')
                     avg = ButterworthFilter(avg, freq_range=[58., 62.], filt_type='stop', order=4).filter()
-                    if save:
+                    if save_eeg:
                     	avg.to_hdf(eeg_path + '/session_' + str(sess) + '_' + pair_str)
                     bosc = P_episode(all_events, avg, sr = avg.samplerate.values,
                                     lowfreq = lowfreq, highfreq=highfreq, numfreqs = numfreqs)
@@ -413,13 +447,13 @@ def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 
                 if pepisodes is None:
                     pepisodes = bosc.Pepisode
                     #be careful to only use events from lists that have eeg data.
-                    recalled = bosc.word_events.recalled.values #[np.isin(bosc.word_events.list, self.lists)]
+                    recalled = bosc.interest_events.recalled.values #[np.isin(bosc.interest_events.list, self.lists)]
                     tscore, _ = scp.ttest_ind(pepisodes[recalled], pepisodes[~recalled], axis = 0)
                 elif np.isnan(tscore).all():
                     tscore, _ = scp.ttest_ind(pepisodes[recalled], pepisodes[~recalled], axis = 0)
                 else:
                     pepisodes = np.vstack([pepisodes, bosc.Pepisode])
-                    recalled = np.hstack([recalled, bosc.word_events.recalled.values])
+                    recalled = np.hstack([recalled, bosc.interest_events.recalled.values])
                     t, _ = scp.ttest_ind(pepisodes[recalled], pepisodes[~recalled], axis = 0)
                     tscore = np.vstack([tscore, t])
                 print(recalled.mean())
@@ -451,9 +485,9 @@ def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 
     pep_nrec = subj_pepisode[~subj_recalled, :].mean(0)
     pep_all = subj_pepisode.mean(0)
 
-    if not os.path.exists(result_path):
-                    os.makedirs(result_path)
-    if save:
+    if save_result:
+        if not os.path.exists(result_path):
+            os.makedirs(result_path)
         np.save(result_path + '{}_all_{}'.format(subj, method), pep_all)
         np.save(result_path + '{}_rec_{}'.format(subj, method), pep_rec)
         np.save(result_path + '{}_nrec_{}'.format(subj, method), pep_nrec)
@@ -538,7 +572,7 @@ def plot_pepisode_multi_subj(all_subj_pep_all = None, all_subj_pep_rec = None, a
         all_subj_pep_nrec = np.vstack(all_subj_pep_nrec)
         all_subj_ttest = np.vstack(all_subj_ttest)
 
-    t_all, p_all = scp.ttest_1samp(all_subj_ttest, popmean = 0, nan_policy='omit')
+    t_all, p_all = scp.ttest_1samp(all_subj_ttest, popmean = 0, nan_policy='omit') #TODO: is 'omit' an acceptable policy?
     plt.figure(figsize = figsize)
     ax1 = plt.subplot(311)
 
