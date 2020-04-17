@@ -23,8 +23,8 @@ class P_episode(object):
 
         event_type - 'WORD' for encoding, 'REC_WORD' for retrieval.
 
-        rel_start = beginning of event in ms relative to word onset
-        rel_stop = end of event in ms relative to word onset
+        relstart = beginning of event in ms relative to word onset
+        relstop = end of event in ms relative to word onset
 
         width - the length of the MorletWaveletFilter
         sr - the sample rate for the EEG signal. If none, it uses CMLReader to find it 
@@ -119,7 +119,7 @@ class P_episode(object):
         self.powerthresh = np.array(self.powerthresh)
         self.durthresh = np.array(self.durthresh)
     
-    
+
     def __BOSC_tf(self):
         '''
         Gets the time frequency matrix for events
@@ -136,19 +136,8 @@ class P_episode(object):
         pows = wf.filter().data  #output is freqs, events, and time
         
         # inconsistent event labeling
-        if self.event_type == 'WORD': 
-            if np.any(np.isin(self.events.type, ['ORIENT'])):
-                start_type = 'ORIENT'
-                end_type = 'DISTRACT_START'
-            else:
-                start_type = 'ENCODING_START'
-                end_type = 'ENCODING_END'
-        elif self.event_type == 'REC_WORD':
-            start_type = 'REC_START'
-            end_type = 'REC_END'
-        else:
-            raise('event_type' + self.event_type + 'not supported. Use either WORD or REC_WORD.')
-
+        
+        start_type, end_type = self.__get_event_keywords(self)
         
         list_events = self.events[np.logical_or(self.events.type==start_type, self.events.type==end_type)]
         while list_events.type.iloc[0] != start_type:
@@ -176,7 +165,21 @@ class P_episode(object):
             #only record successful lists
             self.lists.append(lst)
         self.interest_events = self.interest_events[np.isin(self.interest_events.list, self.lists)]
-        
+    
+    def __get_event_keywords(self):
+        if self.event_type == 'WORD': 
+            if np.any(np.isin(self.events.type, ['ORIENT'])):
+                start_type = 'ORIENT'
+                end_type = 'DISTRACT_START'
+            else:
+                start_type = 'ENCODING_START'
+                end_type = 'ENCODING_END'
+        elif self.event_type == 'REC_WORD':
+            start_type = 'REC_START'
+            end_type = 'REC_END'
+        else:
+            raise Exception('event_type' + self.event_type + 'not supported. Use either WORD or REC_WORD.')
+        return start_type, end_type   
  
     def __BOSC_bgfit(self, tfm):
         '''
