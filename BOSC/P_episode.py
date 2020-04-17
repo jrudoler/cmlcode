@@ -14,7 +14,6 @@ from sklearn.metrics import r2_score
 
 class P_episode(object):
     '''An object for handling the Better Oscillation Detection Methods
-    **Currently only handles encoding events, compatible with FR1 data**
 
     Parameters:
         events - a pandas DataFrame containing the event or events (from the same session) being analyzed
@@ -137,7 +136,7 @@ class P_episode(object):
         
         # inconsistent event labeling
         
-        start_type, end_type = self.__get_event_keywords(self)
+        start_type, end_type = self.__get_event_keywords()
         
         list_events = self.events[np.logical_or(self.events.type==start_type, self.events.type==end_type)]
         while list_events.type.iloc[0] != start_type:
