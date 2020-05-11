@@ -91,8 +91,7 @@ class P_episode(object):
             
             #STEP THREE: Calculate the threshold values to use for detection
             self.__BOSC_threshholds(self.meanpower[i])
-            # *** Hint: At this stage, it is a good idea to cross-check the background power spectrum fit 
-            #(see PLOT #1: Power spectrum and background spectrum fit)
+            
             for num, freq in enumerate(self.freqs):
                 self.detected[i][num] = np.zeros(len(self.tfm[i][num]))
                 
@@ -306,8 +305,11 @@ class P_episode(object):
         list_idx - index of list to visualize
 
         """
+        plot_legend = False
         if ax is None:
+            plot_legend = True
             ax = plt.subplot(1,1,1)
+
         bools = np.logical_and(self.eeg.time >= self.list_times[list_idx][0], 
                                self.eeg.time < self.list_times[list_idx][-1])
         if filtered:
@@ -347,8 +349,8 @@ class P_episode(object):
                 ax.axvspan((start-list_start)/1000, (start + self.relstop - list_start)/1000, alpha = 0.2)
         ax.set_ylabel(r'Voltage [$\mu V$]'); ax.set_xlabel('Time [s]')
         ax.set_title('Frequency: {} Hz'.format(round(self.freqs[freq_idx],2)))
-        if ax is None:
-            ax.legend(['EEG Time Series', 'Detected Oscillations', 'Word Presentation'])
+        if plot_legend:
+            ax.legend(['EEG Time Series', 'Detected Oscillations', 'Event'])
 
 ## END OF CLASS
 
@@ -383,7 +385,7 @@ def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 
 
     print('Subject: ', subj)
     if elecs is None:
-        good_subj = pd.read_pickle('hippo_subject_pairs.csv')
+        good_subj = pd.read_pickle('/home1/jrudoler/Theta_Project/hippo_subject_pairs.csv')
         elecs = good_subj[good_subj['Subject']==subj]['hippo_pairs'].iloc[0]
     subj_pepisode = None
     subj_recalled = None
@@ -394,7 +396,6 @@ def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 
     print(elecs)
     for pair_str in elecs:
         chans = pair_str.split('-')
-        print(chans)
         data = cml.get_data_index(kind = kind); data = data[data['experiment'] ==experiment]
         sessions = data[data['subject']==subj]['session'].unique()
         pepisodes = None # events, freqs
@@ -455,8 +456,8 @@ def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 
                     recalled = np.hstack([recalled, bosc.interest_events.recalled.values])
                     t, _ = scp.ttest_ind(pepisodes[recalled], pepisodes[~recalled], axis = 0)
                     tscore = np.vstack([tscore, t])
-                print(recalled.mean())
-                print(np.shape(tscore))
+                print("Proportion recalled:", recalled.mean())
+                # print(np.shape(tscore))
             except IndexError:
                 print('Error for subject {} session {}'.format(subj, sess))
         if pepisodes is None:
@@ -465,7 +466,7 @@ def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 
         subj_recalled = recalled if subj_recalled is None else np.vstack([subj_recalled, recalled])
         subj_tscores = tscore if subj_tscores is None else np.vstack([subj_tscores, tscore])
         if np.isnan(subj_tscores).all():
-            raise Exception('Too many nan in T-scores')
+            raise Exception('Too many nan in T-scores. This problem can arise when there are no recalled events.')
     if subj_pepisode.ndim > 2: #if multiple electrode pairs, average over pairs
         print("Averaging over {} electrodes for subject {}".format(subj_pepisode.shape[2], subj))
         subj_pepisode = subj_pepisode.mean(2)
@@ -526,8 +527,8 @@ def plot_pepisode(pep_all, pep_rec, pep_nrec, freqs = np.round(np.logspace(np.lo
 
 
 def plot_pepisode_multi_subj(all_subj_pep_all = None, all_subj_pep_rec = None, all_subj_pep_nrec = None, all_subj_ttest = None, 
-    subjects = None, method = 'bip', figsize = (12,10), 
-    freqs = np.round(np.logspace(np.log10(2), np.log10(120), 30), 2), pep_path = ''):
+    subjects = None, method = 'bip', figsize = (12,10), color = 'slateblue',
+    freqs = np.round(np.logspace(np.log10(2), np.log10(120), 30), 2), max_freq = 30, pep_path = ''):
     
     """
     Inputs:
@@ -572,22 +573,23 @@ def plot_pepisode_multi_subj(all_subj_pep_all = None, all_subj_pep_rec = None, a
         all_subj_ttest = np.vstack(all_subj_ttest)
 
     t_all, p_all = scp.ttest_1samp(all_subj_ttest, popmean = 0, nan_policy='omit') #TODO: is 'omit' an acceptable policy?
-    plt.figure(figsize = figsize)
+    if figsize is not None:
+        plt.figure(figsize = figsize)
     ax1 = plt.subplot(311)
 
-    ax1.plot(freqs, all_subj_pep_all.mean(0), '-o', c = 'slateblue', label = 'All word presentation events')
+    ax1.plot(freqs, all_subj_pep_all.mean(0), '-o', c = color, label = 'All word presentation events ' + method)
     ax1.fill_between(freqs, 
                      all_subj_pep_all.mean(0)+all_subj_pep_all.std(0)/np.sqrt(len(all_subj_pep_all)),
                      all_subj_pep_all.mean(0)-all_subj_pep_all.std(0)/np.sqrt(len(all_subj_pep_all)),
                      color = 'b', alpha = 0.1)
     
     ax2 = plt.subplot(312)
-    ax2.plot(freqs, (all_subj_pep_rec-all_subj_pep_nrec).mean(0), c = 'slateblue', label = 'Recalled - Not Recalled')
+    ax2.plot(freqs, (all_subj_pep_rec-all_subj_pep_nrec).mean(0), c = color, label = 'Recalled - Not Recalled ' + method)
     
     sig = p_all<0.05
     ax3 = plt.subplot(313)
-    ax3.scatter(freqs[sig], t_all[sig], marker = '*', c = 'r', s = 50, label = 'Significant (p<0.05)')
-    ax3.plot(freqs, t_all, '-', c = 'slateblue')
+    ax3.scatter(freqs[sig], t_all[sig], marker = '*', c = 'r', s = 50, label = 'Significant (p<0.05) ' + method)
+    ax3.plot(freqs, t_all, '-', c = color)
     
     ax1.set_title('{} Subjects'.format(len(success)), fontsize = 16) 
 
@@ -601,6 +603,12 @@ def plot_pepisode_multi_subj(all_subj_pep_all = None, all_subj_pep_rec = None, a
 
     ax1.legend()
     ax2.legend()
+    ax3.legend()
+
+    ax1.set_xlim(0, 30)
+    ax2.set_xlim(0, 30)
+    ax3.set_xlim(0, 30)
+
 
     plt.tight_layout()
     return success, all_subj_pep_rec, all_subj_pep_nrec, all_subj_ttest
