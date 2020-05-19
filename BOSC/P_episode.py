@@ -81,7 +81,7 @@ class P_episode(object):
         # NB: meanpower is the estimated background power spectrum (average power as a function of frequency)
         
         self.powerthresh = []
-        self.durthresh = [] # will be events by frequency
+        self.durthresh = [] # will be events by 
 
         
         for i, lst in enumerate(self.tfm):
@@ -93,21 +93,23 @@ class P_episode(object):
             self.__BOSC_threshholds(self.meanpower[i])
             
             for num, freq in enumerate(self.freqs):
-                self.detected[i][num] = np.zeros(len(self.tfm[i][num]))
+                self.detected[i][num] = self.__BOSC_detect(
+                	self.tfm[i][num], 
+                    self.powerthresh[i][num], 
+                    self.durthresh[i][num]
+                    )
+
                 
         for ev_idx, event in enumerate(self.interest_events.iterrows()):
             event = event[1]
             #STEP FOUR: Set the target signal in which oscillations will be detected.
             lst_idx = self.lists.index(event.list)
+            # if len(self.lists)<=1:
+            	
             mat = self.tfm[lst_idx]
             bools = np.logical_and(self.list_times[lst_idx] >= (event.eegoffset*(1000/self.sr) + relstart), 
                                    self.list_times[lst_idx] < (event.eegoffset*(1000/self.sr) + relstop))
-            mat = mat[:, bools]
             for num, freq in enumerate(self.freqs):
-                self.detected[lst_idx][num][bools] = self.__BOSC_detect(
-                    mat[num], 
-                    self.powerthresh[lst_idx][num], 
-                    self.durthresh[lst_idx][num])
                 self.Pepisode[ev_idx][num] = np.mean(self.detected[lst_idx][num][bools]) 
                 #Pepisode as a function of frequency.
         
@@ -147,7 +149,12 @@ class P_episode(object):
         for lst in lists:
             start = list_events[(list_events.type == start_type) & (list_events.list == lst)].eegoffset.values
             end = list_events[(list_events.type == end_type) & (list_events.list == lst)].eegoffset.values
-            
+
+            if (start.size!=1) | (end.size!= 1): 
+                print('Bad start/end events for list {}'.format(lst))
+                continue
+                #ex: list has practice or distractor but is interrupted and never starts/ends
+
             #account for differences in samplerate - eegoffset is in samples, so convert to time in ms (same as eeg.time)
             start = int(start*(1000/self.sr))
             end = int(end*(1000/self.sr))
@@ -233,8 +240,8 @@ class P_episode(object):
 
         nT=len(timecourse)-1 #number of time points, used as the last time point
 
-        x = timecourse > powthresh #Step 1: power threshold
-        dx = np.diff(x)
+        x = (timecourse > powthresh).astype(float) #Step 1: power threshold
+        dx = np.diff(x) #x must be int or float, boolean coercion in numpy is a mess
 
         # pos represents the times where the timecourse goes above the threshhold
         # neg represents the times where the timecourse dips below the threshhold
@@ -459,7 +466,10 @@ def calc_subj_pep(subj, elecs = None, method = 'bip', relstart = 300, relstop = 
                 print("Proportion recalled:", recalled.mean())
                 # print(np.shape(tscore))
             except IndexError:
-                print('Error for subject {} session {}'.format(subj, sess))
+                print('IndexError for subject {} session {}'.format(subj, sess))
+            except FileNotFoundError:
+                print('FileNotFoundError for {} session {}'.format(subj, sess))
+                continue
         if pepisodes is None:
             raise Exception('No working sessions')
         subj_pepisode = pepisodes if subj_pepisode is None else np.dstack([subj_pepisode, pepisodes])
@@ -605,9 +615,9 @@ def plot_pepisode_multi_subj(all_subj_pep_all = None, all_subj_pep_rec = None, a
     ax2.legend()
     ax3.legend()
 
-    ax1.set_xlim(0, 30)
-    ax2.set_xlim(0, 30)
-    ax3.set_xlim(0, 30)
+    ax1.set_xlim(0, max_freq)
+    ax2.set_xlim(0, max_freq)
+    ax3.set_xlim(0, max_freq)
 
 
     plt.tight_layout()
