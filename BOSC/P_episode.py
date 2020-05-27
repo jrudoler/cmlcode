@@ -142,7 +142,8 @@ class P_episode(object):
         list_events = self.events[np.logical_or(self.events.type==start_type, self.events.type==end_type)]
         while list_events.type.iloc[0] != start_type:
             list_events = list_events.iloc[1:]
-        lists = list(list_events.list.unique())
+        lists = list_events.list.unique()
+        lists = lists[lists>0]
         self.tfm = []
         self.list_times = []
         self.lists = []
