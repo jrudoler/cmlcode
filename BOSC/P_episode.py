@@ -386,16 +386,16 @@ class P_episode(object):
                 local_events.eegoffset * (1000 / self.sr) <= self.list_times[list_idx][-1]
             )]
             list_start = self.list_times[list_idx][0]
-            for start, end in zip(
-            		local_events[local_events.type == 'WORD'].eegoffset * (1000 / self.sr),
+            for start, end in \
+            	zip(local_events[local_events.type == 'WORD'].eegoffset * (1000 / self.sr),
             		local_events[local_events.type == 'WORD_OFF'].eegoffset * (1000 / self.sr)):
                 ax.axvspan((start - list_start) / 1000,
                            (end - list_start) / 1000, alpha=0.2)
         else:
             local_events = self.interest_events[np.logical_and(
                 self.interest_events.eegoffset * (1000 / self.sr) >= self.list_times[list_idx][0],
-                self.interest_events.eegoffset * (1000 / self.sr) <= self.list_times[list_idx][-1]
-                )]
+                self.interest_events.eegoffset * (1000 / self.sr) <= self.list_times[list_idx][-1])
+            ]
             list_start = self.list_times[list_idx][0]
             for start in local_events.eegoffset.values * (1000 / self.sr):
                 ax.axvspan((start - list_start) / 1000,
@@ -483,11 +483,9 @@ def calc_subj_pep(subj, elecs=None, method='bip',
                         filt_type='stop', order=4).filter()
                     print("Applying BOSC method!")
                     if save_eeg:
-                        bip.to_hdf(eeg_path + 'session_' +
-                                   str(sess) + '_' + pair_str)
+                        bip.to_hdf(eeg_path + 'session_' + str(sess) + '_' + pair_str)
                     bosc = P_episode(all_events, bip, sr=bip.samplerate.values,
-                                     lowfreq=lowfreq, highfreq=highfreq,
-                                     numfreqs=numfreqs)
+                                     lowfreq=lowfreq, highfreq=highfreq, numfreqs=numfreqs)
 
                 elif method == 'avg':
                     contacts = reader.load("contacts")
@@ -534,7 +532,6 @@ def calc_subj_pep(subj, elecs=None, method='bip',
                         pepisodes[recalled], pepisodes[~recalled], axis=0)
                     tscore = np.vstack([tscore, t])
                 print("Proportion recalled:", recalled.mean())
-                # print(np.shape(tscore))
             except IndexError:
                 print('IndexError for subject {} session {}'.format(subj, sess))
             except FileNotFoundError:
